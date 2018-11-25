@@ -152,6 +152,7 @@ pub struct LR<T> {
 
 type Acceleration = tarr![P1, Z0, N2, Z0, Z0, Z0, Z0];
 type AngularAcceleration = tarr![Z0, Z0, N2, Z0, Z0, Z0, Z0];
+type Current = tarr![Z0, Z0, Z0, P1, Z0, Z0, Z0];
 
 pub struct DDMRModel {
     p: DDMRParams,
@@ -206,4 +207,31 @@ impl DDMRModel {
 pub struct ActuatedDDMRModel {
     ddmr: DDMRModel,
     p: DCMotorParams,
+    di: LR<Differentiator<Current>>,
+}
+
+impl ActuatedDDMRModel {
+    pub fn new(dt: Second<f64>, ddmr_par: DDMRParams, params: DCMotorParams) -> Self {
+        Self {
+            ddmr: DDMRModel::new(dt, ddmr_par),
+            p: params,
+            di: LR {
+                l: Differentiator::new(dt, 0. * A),
+                r: Differentiator::new(dt, 0. * A),
+            },
+        }
+    }
+
+    pub fn observe(&mut self, v: LR<Volt<f64>>) -> Vels {
+        let p = &self.p;
+        let phidot = self.ddmr.wheels();
+        let ial: Ampere<f64> = (v.l - p.Kb * p.N * phidot.l - p.La * self.di.l.get()) / p.Ra;
+        let iar: Ampere<f64> = (v.r - p.Kb * p.N * phidot.r - p.La * self.di.r.get()) / p.Ra;
+        self.di.l.add(ial);
+        self.di.r.add(iar);
+        self.ddmr.observe(LR {
+            l: ial * p.Kt,
+            r: iar * p.Kt,
+        })
+    }
 }

@@ -33,31 +33,8 @@ fn vec_from_angle(angle: f32) -> Vector2 {
     Vector2::new(vx, vy)
 }
 
-/// Just makes a random `Vector2` with the given max magnitude.
-fn random_vec(max_magnitude: f32) -> Vector2 {
-    let angle = rand::random::<f32>() * 2.0 * std::f32::consts::PI;
-    let mag = rand::random::<f32>() * max_magnitude;
-    vec_from_angle(angle) * (mag)
-}
-
-/// *********************************************************************
-/// Now we define our Actor's.
-/// An Actor is anything in the game world.
-/// We're not *quite* making a real entity-component system but it's
-/// pretty close.  For a more complicated game you would want a
-/// real ECS, but for this it's enough to say that all our game objects
-/// contain pretty much the same data.
-/// **********************************************************************
-#[derive(Debug)]
-enum ActorType {
-    Player,
-    // Rock,
-    // Shot,
-}
-
 #[derive(Debug)]
 struct Actor {
-    tag: ActorType,
     pos: Point2,
     facing: f32,
     velocity: Vector2,
@@ -106,9 +83,6 @@ fn create_player() -> Actor {
 /// Our unit of world space is simply pixels, though we do transform
 /// the coordinate system so that +y is up and -y is down.
 /// **********************************************************************
-
-const SHOT_SPEED: f32 = 200.0;
-const SHOT_ANG_VEL: f32 = 0.1;
 
 // Acceleration in pixels per second.
 const PLAYER_THRUST: f32 = 100.0;

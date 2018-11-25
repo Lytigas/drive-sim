@@ -97,6 +97,7 @@ pub type VoltSecond<V> = SI<V, tarr![P2, P1, N2, N1, Z0, Z0, Z0]>;
 pub type NewtonMeter<V> = SI<V, tarr![P2, P1, N2, Z0, Z0, Z0, Z0]>;
 
 #[allow(non_snake_case)]
+#[derive(Debug, Clone)]
 pub struct DDMRParams {
     /// R = wheel radius
     pub R: Meter<f64>,
@@ -115,6 +116,7 @@ pub struct DDMRParams {
 }
 
 #[allow(non_snake_case)]
+#[derive(Debug, Clone)]
 pub struct DCMotorParams {
     /// Ra = armature resistance
     pub Ra: Ohm<f64>,
@@ -154,6 +156,7 @@ type Acceleration = tarr![P1, Z0, N2, Z0, Z0, Z0, Z0];
 type AngularAcceleration = tarr![Z0, Z0, N2, Z0, Z0, Z0, Z0];
 type Current = tarr![Z0, Z0, Z0, P1, Z0, Z0, Z0];
 
+#[derive(Debug, Clone)]
 pub struct DDMRModel {
     p: DDMRParams,
     linv: Integrator<Acceleration>,
@@ -204,6 +207,7 @@ impl DDMRModel {
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct ActuatedDDMRModel {
     ddmr: DDMRModel,
     p: DCMotorParams,
@@ -230,8 +234,12 @@ impl ActuatedDDMRModel {
         self.di.l.add(ial);
         self.di.r.add(iar);
         self.ddmr.observe(LR {
-            l: ial * p.Kt,
-            r: iar * p.Kt,
+            l: ial * p.Kt * p.N,
+            r: iar * p.Kt * p.N,
         })
+    }
+
+    pub fn vel(&self) -> Vels {
+        self.ddmr.vel()
     }
 }

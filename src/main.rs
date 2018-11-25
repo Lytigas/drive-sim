@@ -37,85 +37,77 @@ fn vec_from_angle(angle: f32) -> Vector2 {
 struct Actor {
     pos: Point2,
     facing: f32,
-    velocity: Vector2,
-    ang_vel: f32,
-    bbox_size: f32,
-
-    // I am going to lazily overload "life" with a
-    // double meaning:
-    // for shots, it is the time left to live,
-    // for players and rocks, it is the actual hit points.
-    life: f32,
+    sim: dynamics::ActuatedDDMRModel,
 }
-
-const PLAYER_LIFE: f32 = 1.0;
-const SHOT_LIFE: f32 = 2.0;
-const ROCK_LIFE: f32 = 1.0;
-
-const PLAYER_BBOX: f32 = 12.0;
-const ROCK_BBOX: f32 = 12.0;
-const SHOT_BBOX: f32 = 6.0;
-
-const MAX_ROCK_VEL: f32 = 50.0;
 
 /// *********************************************************************
 /// Now we have some constructor functions for different game objects.
 /// **********************************************************************
 
 fn create_player() -> Actor {
+    use dimensioned::si::*;
     Actor {
-        tag: ActorType::Player,
         pos: Point2::origin(),
         facing: 0.,
-        velocity: na::zero(),
-        ang_vel: 0.,
-        bbox_size: PLAYER_BBOX,
-        life: PLAYER_LIFE,
+        sim: dynamics::ActuatedDDMRModel::new(
+            0.005 * S,
+            dynamics::DDMRParams {
+                R: 0.1524 / 2. * M,
+                m: 32.5 * KG,
+                mc: 32.5 * KG - 4.53592 * KG,
+                d: 0.06 * M,
+                L: 0.63684 / 2. * M,
+                I: 4.29 * KG * M * M,
+                Iw: 0.00063651 * KG * M * M * 3.,
+            },
+            // https://www.systemvision.com/blog/first-robotics-frc-motor-modeling-may-6-2016
+            dynamics::DCMotorParams {
+                Ra: 12. * V / 133. / A,
+                Kt: 2.4 * N * M / 133. / A,
+                N: 5.10,
+                La: 0. * H,
+                Kb: 2.11E-2 * V * S,
+            },
+        ),
     }
 }
-
-/// *********************************************************************
-/// Now we make functions to handle physics.  We do simple Newtonian
-/// physics (so we do have inertia), and cap the max speed so that we
-/// don't have to worry too much about small objects clipping through
-/// each other.
-///
-/// Our unit of world space is simply pixels, though we do transform
-/// the coordinate system so that +y is up and -y is down.
-/// **********************************************************************
-
-// Acceleration in pixels per second.
-const PLAYER_THRUST: f32 = 100.0;
-// Rotation in radians per second.
-const PLAYER_TURN_RATE: f32 = 3.0;
-// Seconds between shots
-const PLAYER_SHOT_TIME: f32 = 0.5;
 
 fn player_handle_input(actor: &mut Actor, input: &InputState, dt: f32) {
-    actor.facing += dt * PLAYER_TURN_RATE * input.xaxis;
+    let l = input.yaxis - input.xaxis;
+    let r = input.yaxis + input.xaxis;
+    let l = if l > 1.0 {
+        1.0
+    } else if l < -1.0 {
+        -1.0
+    } else {
+        l
+    };
+    let r = if r > 1.0 {
+        1.0
+    } else if r < -1.0 {
+        -1.0
+    } else {
+        r
+    };
 
-    if input.yaxis > 0.0 {
-        player_thrust(actor, dt);
-    }
+    actor.sim.observe(dynamics::LR {
+        l: l * 12. * dimensioned::si::V,
+        r: r * 12. * dimensioned::si::V,
+    });
 }
 
-fn player_thrust(actor: &mut Actor, dt: f32) {
-    let direction_vector = vec_from_angle(actor.facing);
-    let thrust_vector = direction_vector * (PLAYER_THRUST);
-    actor.velocity += thrust_vector * (dt);
-}
+use std::ops::Deref;
 
-const MAX_PHYSICS_VEL: f32 = 250.0;
+const PX_PER_METER: u32 = 100;
 
 fn update_actor_position(actor: &mut Actor, dt: f32) {
-    // Clamp the velocity to the max efficiently
-    let norm_sq = actor.velocity.norm_squared();
-    if norm_sq > MAX_PHYSICS_VEL.powi(2) {
-        actor.velocity = actor.velocity / norm_sq.sqrt() * MAX_PHYSICS_VEL;
-    }
-    let dv = actor.velocity * (dt);
+    let dynamics::Vels { lin, ang } = actor.sim.vel();
+    let dv = vec_from_angle(actor.facing)
+        * *(lin / dimensioned::si::MPS) as f32
+        * (dt)
+        * PX_PER_METER as f32;
     actor.pos += dv;
-    actor.facing += actor.ang_vel;
+    actor.facing += *(ang * dimensioned::si::S) as f32 * (dt);
 }
 
 /// Takes an actor and wraps its position to the bounds of the
@@ -135,10 +127,6 @@ fn wrap_actor_position(actor: &mut Actor, sx: f32, sy: f32) {
     } else if actor.pos.y < -screen_y_bounds {
         actor.pos.y += sy;
     }
-}
-
-fn handle_timed_life(actor: &mut Actor, dt: f32) {
-    actor.life -= dt;
 }
 
 /// Translates the world coordinate system, which
@@ -188,33 +176,16 @@ impl Assets {
         })
     }
 
-    fn actor_image(&mut self, actor: &Actor) -> &mut graphics::Image {
-        match actor.tag {
-            ActorType::Player => &mut self.player_image,
-        }
+    fn actor_image(&mut self, _actor: &Actor) -> &mut graphics::Image {
+        &mut self.player_image
     }
 }
 
-/// **********************************************************************
-/// The `InputState` is exactly what it sounds like, it just keeps track of
-/// the user's input state so that we turn keyboard events into something
-/// state-based and device-independent.
-/// **********************************************************************
-#[derive(Debug)]
+/// Simulates joystick axes for arcade drive
+#[derive(Debug, Default)]
 struct InputState {
-    xaxis: f32,
-    yaxis: f32,
-    fire: bool,
-}
-
-impl Default for InputState {
-    fn default() -> Self {
-        InputState {
-            xaxis: 0.0,
-            yaxis: 0.0,
-            fire: false,
-        }
-    }
+    xaxis: f64,
+    yaxis: f64,
 }
 
 /// **********************************************************************
@@ -230,15 +201,13 @@ impl Default for InputState {
 
 struct MainState {
     player: Actor,
-    level: i32,
-    score: i32,
     assets: Assets,
     screen_width: u32,
     screen_height: u32,
     input: InputState,
     gui_dirty: bool,
-    score_display: graphics::Text,
-    level_display: graphics::Text,
+    xpos_display: graphics::Text,
+    ypos_display: graphics::Text,
 }
 
 impl MainState {
@@ -251,35 +220,35 @@ impl MainState {
         print_instructions();
 
         let assets = Assets::new(ctx)?;
-        let score_disp = graphics::Text::new(ctx, "score", &assets.font)?;
-        let level_disp = graphics::Text::new(ctx, "level", &assets.font)?;
+        let xpos_display = graphics::Text::new(ctx, "x: ", &assets.font)?;
+        let ypos_display = graphics::Text::new(ctx, "y: ", &assets.font)?;
 
         let player = create_player();
 
         let s = MainState {
             player,
-            level: 0,
-            score: 0,
             assets,
             screen_width: ctx.conf.window_mode.width,
             screen_height: ctx.conf.window_mode.height,
             input: InputState::default(),
             gui_dirty: true,
-            score_display: score_disp,
-            level_display: level_disp,
+            xpos_display,
+            ypos_display,
         };
 
         Ok(s)
     }
 
     fn update_ui(&mut self, ctx: &mut Context) {
-        let score_str = format!("Score: {}", self.score);
-        let level_str = format!("Level: {}", self.level);
-        let score_text = graphics::Text::new(ctx, &score_str, &self.assets.font).unwrap();
-        let level_text = graphics::Text::new(ctx, &level_str, &self.assets.font).unwrap();
+        // let y_str = format!("y: {}", self.score);
+        // let x_str = format!("x: {}", self.level);
+        let y_str = "";
+        let x_str = "";
+        let y_text = graphics::Text::new(ctx, &y_str, &self.assets.font).unwrap();
+        let x_text = graphics::Text::new(ctx, &x_str, &self.assets.font).unwrap();
 
-        self.score_display = score_text;
-        self.level_display = level_text;
+        self.xpos_display = x_text;
+        self.ypos_display = y_text;
     }
 }
 
@@ -288,11 +257,6 @@ impl MainState {
 /// **********************************************************************
 
 fn print_instructions() {
-    println!();
-    println!("Welcome to ASTROBLASTO!");
-    println!();
-    println!("How to play:");
-    println!("L/R arrow keys rotate your ship, up thrusts, space bar fires");
     println!();
 }
 
@@ -314,6 +278,8 @@ fn draw_actor(
     graphics::draw_ex(ctx, image, drawparams)
 }
 
+const SIM_FPS: u32 = 200;
+
 /// **********************************************************************
 /// Now we implement the `EventHandler` trait from `ggez::event`, which provides
 /// ggez with callbacks for updating and drawing our game, as well as
@@ -321,10 +287,15 @@ fn draw_actor(
 /// **********************************************************************
 impl EventHandler for MainState {
     fn update(&mut self, ctx: &mut Context) -> GameResult<()> {
-        const DESIRED_FPS: u32 = 60;
+        const DESIRED_FPS: u32 = SIM_FPS;
 
         while timer::check_update_time(ctx, DESIRED_FPS) {
             let seconds = 1.0 / (DESIRED_FPS as f32);
+            if (seconds - 0.005).abs() > 0.001 {
+                println!("SIM CANNOT KEEPUP, FRAME TIME IS {}", seconds);
+                return Ok(());
+                // should be Err()?
+            }
 
             // Update the player state based on the user input.
             player_handle_input(&mut self.player, &self.input, seconds);
@@ -343,14 +314,6 @@ impl EventHandler for MainState {
             if self.gui_dirty {
                 self.update_ui(ctx);
                 self.gui_dirty = false;
-            }
-
-            // Finally we check for our end state.
-            // I want to have a nice death screen eventually,
-            // but for now we just quit.
-            if self.player.life <= 0.0 {
-                println!("Game over!");
-                let _ = ctx.quit();
             }
         }
 
@@ -374,8 +337,8 @@ impl EventHandler for MainState {
         // And draw the GUI elements in the right places.
         let level_dest = graphics::Point2::new(10.0, 10.0);
         let score_dest = graphics::Point2::new(200.0, 10.0);
-        graphics::draw(ctx, &self.level_display, level_dest, 0.0)?;
-        graphics::draw(ctx, &self.score_display, score_dest, 0.0)?;
+        graphics::draw(ctx, &self.xpos_display, level_dest, 0.0)?;
+        graphics::draw(ctx, &self.ypos_display, score_dest, 0.0)?;
 
         // Then we flip the screen...
         graphics::present(ctx);
@@ -397,14 +360,14 @@ impl EventHandler for MainState {
             Keycode::Up => {
                 self.input.yaxis = 1.0;
             }
+            Keycode::Down => {
+                self.input.yaxis = -1.0;
+            }
             Keycode::Left => {
                 self.input.xaxis = -1.0;
             }
             Keycode::Right => {
                 self.input.xaxis = 1.0;
-            }
-            Keycode::Space => {
-                self.input.fire = true;
             }
             Keycode::P => {
                 let img = graphics::screenshot(ctx).expect("Could not take screenshot");
@@ -423,9 +386,6 @@ impl EventHandler for MainState {
             }
             Keycode::Left | Keycode::Right => {
                 self.input.xaxis = 0.0;
-            }
-            Keycode::Space => {
-                self.input.fire = false;
             }
             _ => (), // Do nothing
         }

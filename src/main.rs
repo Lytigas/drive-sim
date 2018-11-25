@@ -1,3 +1,5 @@
+#![feature(duration_as_u128)]
+
 //! An Asteroids-ish example game to show off ggez.
 //! The idea is that this game is simple but still
 //! non-trivial enough to be interesting.
@@ -50,7 +52,7 @@ fn create_player() -> Actor {
         pos: Point2::origin(),
         facing: 0.,
         sim: dynamics::ActuatedDDMRModel::new(
-            0.005 * S,
+            1. / SIM_FPS as f64 * S,
             dynamics::DDMRParams {
                 R: 0.1524 / 2. * M,
                 m: 32.5 * KG,
@@ -68,6 +70,8 @@ fn create_player() -> Actor {
                 La: 0. * H,
                 Kb: 2.11E-2 * V * S,
             },
+            0.8,
+            0.0035,
         ),
     }
 }
@@ -240,10 +244,10 @@ impl MainState {
     }
 
     fn update_ui(&mut self, ctx: &mut Context) {
-        // let y_str = format!("y: {}", self.score);
-        // let x_str = format!("x: {}", self.level);
-        let y_str = "";
-        let x_str = "";
+        let y_str = format!("y: {}", self.player.pos.x);
+        let x_str = format!("x: {}", self.player.pos.y);
+        // let y_str = "";
+        // let x_str = "";
         let y_text = graphics::Text::new(ctx, &y_str, &self.assets.font).unwrap();
         let x_text = graphics::Text::new(ctx, &x_str, &self.assets.font).unwrap();
 
@@ -278,7 +282,7 @@ fn draw_actor(
     graphics::draw_ex(ctx, image, drawparams)
 }
 
-const SIM_FPS: u32 = 200;
+const SIM_FPS: u32 = 60;
 
 /// **********************************************************************
 /// Now we implement the `EventHandler` trait from `ggez::event`, which provides
@@ -290,11 +294,13 @@ impl EventHandler for MainState {
         const DESIRED_FPS: u32 = SIM_FPS;
 
         while timer::check_update_time(ctx, DESIRED_FPS) {
-            let seconds = 1.0 / (DESIRED_FPS as f32);
-            if (seconds - 0.005).abs() > 0.001 {
-                println!("SIM CANNOT KEEPUP, FRAME TIME IS {}", seconds);
-                return Ok(());
-                // should be Err()?
+            const seconds: f32 = 1.0 / (DESIRED_FPS as f32);
+            if (timer::get_delta(ctx).as_micros() as i64 - 16667) > 1000 {
+                println!(
+                    "SIM CANNOT KEEPUP, FRAME TIME IS {:?}",
+                    timer::get_delta(ctx)
+                );
+                // return Ok(());
             }
 
             // Update the player state based on the user input.
@@ -309,12 +315,14 @@ impl EventHandler for MainState {
                 self.screen_height as f32,
             );
 
+            // println!("pos: {:?}", self.player.pos);
             // Using a gui_dirty flag here is a little
             // messy but fine here.
-            if self.gui_dirty {
-                self.update_ui(ctx);
-                self.gui_dirty = false;
-            }
+            // if self.gui_dirty {
+            // self.update_ui(ctx);
+            // self.gui_dirty = false;
+            // }
+            // std::thread::sleep_ms(5);
         }
 
         Ok(())
@@ -381,7 +389,7 @@ impl EventHandler for MainState {
 
     fn key_up_event(&mut self, _ctx: &mut Context, keycode: Keycode, _keymod: Mod, _repeat: bool) {
         match keycode {
-            Keycode::Up => {
+            Keycode::Up | Keycode::Down => {
                 self.input.yaxis = 0.0;
             }
             Keycode::Left | Keycode::Right => {

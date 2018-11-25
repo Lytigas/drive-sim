@@ -205,6 +205,10 @@ impl DDMRModel {
     pub fn wheels(&self) -> LR<Hertz<f64>> {
         self.vels_to_wheel(self.vel())
     }
+
+    pub fn params(&self) -> &DDMRParams {
+        &self.p
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -212,10 +216,18 @@ pub struct ActuatedDDMRModel {
     ddmr: DDMRModel,
     p: DCMotorParams,
     di: LR<Differentiator<Current>>,
+    crr: f64,
+    eff: f64,
 }
 
 impl ActuatedDDMRModel {
-    pub fn new(dt: Second<f64>, ddmr_par: DDMRParams, params: DCMotorParams) -> Self {
+    pub fn new(
+        dt: Second<f64>,
+        ddmr_par: DDMRParams,
+        params: DCMotorParams,
+        eff: f64,
+        crr: f64,
+    ) -> Self {
         Self {
             ddmr: DDMRModel::new(dt, ddmr_par),
             p: params,
@@ -223,6 +235,8 @@ impl ActuatedDDMRModel {
                 l: Differentiator::new(dt, 0. * A),
                 r: Differentiator::new(dt, 0. * A),
             },
+            crr,
+            eff,
         }
     }
 
@@ -233,9 +247,15 @@ impl ActuatedDDMRModel {
         let iar: Ampere<f64> = (v.r - p.Kb * p.N * phidot.r - p.La * self.di.r.get()) / p.Ra;
         self.di.l.add(ial);
         self.di.r.add(iar);
+        let pd = self.ddmr.params();
+        let frictl = (phidot.l.value_unsafe.signum()) * self.crr * pd.m * 9.81 * MPS2;
+        let frictr = (phidot.r.value_unsafe.signum()) * self.crr * pd.m * 9.81 * MPS2;
+        let frictl = frictl * pd.Iw / pd.R / (pd.m - pd.mc) * 2.;
+        let frictr = frictr * pd.Iw / pd.R / (pd.m - pd.mc) * 2.;
+
         self.ddmr.observe(LR {
-            l: ial * p.Kt * p.N,
-            r: iar * p.Kt * p.N,
+            l: ial * p.Kt * p.N * self.eff - frictl,
+            r: iar * p.Kt * p.N * self.eff - frictr,
         })
     }
 

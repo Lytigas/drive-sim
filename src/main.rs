@@ -154,29 +154,29 @@ fn world_to_screen_coords(screen_width: u32, screen_height: u32, point: Point2) 
 
 struct Assets {
     player_image: graphics::Image,
-    shot_image: graphics::Image,
-    rock_image: graphics::Image,
+    // shot_image: graphics::Image,
+    // rock_image: graphics::Image,
     font: graphics::Font,
-    shot_sound: audio::Source,
-    hit_sound: audio::Source,
+    // shot_sound: audio::Source,
+    // hit_sound: audio::Source,
 }
 
 impl Assets {
     fn new(ctx: &mut Context) -> GameResult<Assets> {
         let player_image = graphics::Image::new(ctx, "/player.png")?;
-        let shot_image = graphics::Image::new(ctx, "/shot.png")?;
-        let rock_image = graphics::Image::new(ctx, "/rock.png")?;
+        // let shot_image = graphics::Image::new(ctx, "/shot.png")?;
+        // let rock_image = graphics::Image::new(ctx, "/rock.png")?;
         let font = graphics::Font::new(ctx, "/DejaVuSerif.ttf", 18)?;
 
-        let shot_sound = audio::Source::new(ctx, "/pew.ogg")?;
-        let hit_sound = audio::Source::new(ctx, "/boom.ogg")?;
+        // let shot_sound = audio::Source::new(ctx, "/pew.ogg")?;
+        // let hit_sound = audio::Source::new(ctx, "/boom.ogg")?;
         Ok(Assets {
             player_image,
-            shot_image,
-            rock_image,
+            // shot_image,
+            // rock_image,
             font,
-            shot_sound,
-            hit_sound,
+            // shot_sound,
+            // hit_sound,
         })
     }
 

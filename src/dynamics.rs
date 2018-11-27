@@ -240,6 +240,10 @@ impl ActuatedDDMRModel {
         }
     }
 
+    pub fn ddmr(&self) -> &DDMRModel {
+        &self.ddmr
+    }
+
     pub fn observe(&mut self, v: LR<Volt<f64>>) -> Vels {
         let p = &self.p;
         let phidot = self.ddmr.wheels();

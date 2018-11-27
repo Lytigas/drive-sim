@@ -58,6 +58,7 @@ fn create_player() -> Actor {
                 m: 32.5 * KG,
                 mc: 32.5 * KG - 4.53592 * KG,
                 d: 0.06 * M,
+                // d: 0.0 * M,
                 L: 0.63684 / 2. * M,
                 I: 4.29 * KG * M * M,
                 Iw: 0.00063651 * KG * M * M * 3.,
@@ -93,6 +94,8 @@ fn player_handle_input(actor: &mut Actor, input: &InputState, dt: f32) {
     } else {
         r
     };
+
+    println!("l: {}, r: {}", l, r);
 
     actor.sim.observe(dynamics::LR {
         l: l * 12. * dimensioned::si::V,
@@ -153,7 +156,7 @@ fn world_to_screen_coords(screen_width: u32, screen_height: u32, point: Point2) 
 /// **********************************************************************
 
 struct Assets {
-    player_image: graphics::Image,
+    player_image: graphics::Mesh,
     // shot_image: graphics::Image,
     // rock_image: graphics::Image,
     font: graphics::Font,
@@ -162,8 +165,20 @@ struct Assets {
 }
 
 impl Assets {
-    fn new(ctx: &mut Context) -> GameResult<Assets> {
-        let player_image = graphics::Image::new(ctx, "/player.png")?;
+    fn new(ctx: &mut Context, player_wb_r: f32) -> GameResult<Assets> {
+        let player_image = graphics::MeshBuilder::new()
+            .circle(
+                graphics::DrawMode::Fill,
+                Point2::new(0.0, 0.0),
+                player_wb_r,
+                1.0,
+            )
+            .triangles(&[
+                Point2::new(-player_wb_r, 0.0),
+                Point2::new(player_wb_r, 0.0),
+                Point2::new(0.0, -1.5 * player_wb_r),
+            ])
+            .build(ctx)?;
         // let shot_image = graphics::Image::new(ctx, "/shot.png")?;
         // let rock_image = graphics::Image::new(ctx, "/rock.png")?;
         let font = graphics::Font::new(ctx, "/DejaVuSerif.ttf", 18)?;
@@ -180,7 +195,7 @@ impl Assets {
         })
     }
 
-    fn actor_image(&mut self, _actor: &Actor) -> &mut graphics::Image {
+    fn actor_image(&mut self, _actor: &Actor) -> &mut graphics::Mesh {
         &mut self.player_image
     }
 }
@@ -223,11 +238,14 @@ impl MainState {
 
         print_instructions();
 
-        let assets = Assets::new(ctx)?;
+        let player = create_player();
+
+        let assets = Assets::new(
+            ctx,
+            *(player.sim.ddmr().params().L / dimensioned::si::M * PX_PER_METER as f64) as f32,
+        )?;
         let xpos_display = graphics::Text::new(ctx, "x: ", &assets.font)?;
         let ypos_display = graphics::Text::new(ctx, "y: ", &assets.font)?;
-
-        let player = create_player();
 
         let s = MainState {
             player,
